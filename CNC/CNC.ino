@@ -40,6 +40,38 @@ TaskHandle_t Task2;
 
 HardwareSerial MySerial(2);
 
+void readFromSd_buf(String fileName){
+  MySerial.println(fileName);
+  buf_func = &readFromSd;
+  buf_str = fileName;
+}
+
+void readFromSd(String fileName){
+  File file = SD.open(fileName);
+  if(!file){
+    popUp("Failed to open file", 2, true, NULL, "", NULL, "");
+    return;
+  }
+  String currentBuffer = "";
+  bool isComment = false;
+  while(file.available()){
+    int input = file.read();
+    if(input !=59){
+      if(input != 13 && input != 59){
+        if(input != 10 && isComment == false){
+          currentBuffer = currentBuffer + char(input);
+        }
+      }else{
+        isComment = false;
+        firstParse(&currentBuffer);
+      }
+    }else{
+      isComment = true;
+    }
+  }
+  file.close();
+}
+
 void popUp(char message[], int textSize, bool shouldClean, Callbacks exitFunction, String param1, Callbacks exitFunction2, String param2){
   int firstInput = digitalRead(35);
   int firstInput_2 = digitalRead(34);
@@ -162,7 +194,7 @@ void explore(String fileName){
       switch(*(types+i)){
         case 2:
           * (colors + i) = ILI9341_GREEN;
-          * (inputResponses + i) = &nieh;
+          * (inputResponses + i) = &readFromSd_buf;
           if(currentFile.endsWith("/")){
             strParams[i] = String(currentFile) + String(* (names+i));
           }else{
@@ -414,6 +446,7 @@ int moveBuffer[4] = {0,0,0,0};
 bool isMoving = false;
 
 void moveHead(int x, int y, int z, int e){
+  while(isMoving != false){}
   MySerial.printf("\nMoving : x = %d; y = %d; z =%d; e = %d;\n",x,y,z,e);
   moveBuffer[0] = x;
   moveBuffer[1] = y;
@@ -451,66 +484,74 @@ void dumpSerial(void * pvParameters){
       }
       isMoving = false;
     }
+    bool isComment = false;
     while(Serial.available()){
       int input = Serial.read();
-      if(input != 13 ){
-        if(input != 10 ){
-          currentBuffer = currentBuffer + char(input);
+      if(input != 59){
+        if(input != 13 && input != 59){
+          if(input != 10 && isComment == false){
+            currentBuffer = currentBuffer + char(input);
+          }
+        }else{
+          isComment = false;
+          firstParse(&currentBuffer);
         }
       }else{
-        
-        int cs = 0;
-        for(int i = 0; currentBuffer.charAt(i) != '*' && currentBuffer.charAt(i) != NULL; i++){
-          cs = cs ^ currentBuffer.charAt(i);
-        }
-        cs &= 0xff;  // Defensive programming...
-        String temp = currentBuffer;
-        int star_pos = currentBuffer.indexOf("*");
-        int readCS;
-        if(star_pos != -1){
-          readCS = temp.substring(star_pos+1).toInt();
-          currentBuffer.remove(star_pos);
-        }else{
-          readCS = cs;
-        }
-        if(readCS == cs){
-          //PARSING
-          int parameters_qtty = parseParams(currentBuffer);
-          
-          char * command = getParam('M');
-          if(command != NULL){
-            int param = atoi(command);
-            parseM(param); 
-          }else{
-            command = getParam('G');
-            if(command != NULL){
-              int param = atoi(command);
-              parseG(param);
-            }else{
-              command = getParam('T');
-              if(command != NULL){
-                int param = atoi(command);
-                MySerial.print("Should set to tool n ");
-                MySerial.println(param);
-                
-              }else{
-                MySerial.println("NO COMMAND ???");
-              }
-            }
-            
-          }
-          
-        }else{
-          MySerial.println("ERROR PARSING.");
-        }
-        currentBuffer = "";
-        clearParams();
+        isComment = true;
       }
     }
   }
 }
 
+void firstParse(String * input){
+  String currentBuffer = * input;
+  int cs = 0;
+  for(int i = 0; currentBuffer.charAt(i) != '*' && currentBuffer.charAt(i) != NULL; i++){
+    cs = cs ^ currentBuffer.charAt(i);
+  }
+  cs &= 0xff;  // Defensive programming...
+  String temp = currentBuffer;
+  int star_pos = currentBuffer.indexOf("*");
+  int readCS;
+  if(star_pos != -1){
+    readCS = temp.substring(star_pos+1).toInt();
+    currentBuffer.remove(star_pos);
+  }else{
+    readCS = cs;
+  }
+  if(readCS == cs){
+          //PARSING
+    int parameters_qtty = parseParams(currentBuffer);
+    char * command = getParam('M');
+    if(command != NULL){
+      int param = atoi(command);
+      parseM(param); 
+    }else{
+      command = getParam('G');
+      if(command != NULL){
+        int param = atoi(command);
+        parseG(param);
+      }else{
+        command = getParam('T');
+        if(command != NULL){
+          int param = atoi(command);
+          MySerial.print("Should set to tool n ");
+          MySerial.println(param);
+        }else{
+          MySerial.println("NO COMMAND ???");
+        }
+      }
+    }
+  }else{
+    MySerial.println("ERROR PARSING.");
+  }
+  * input = "";
+  clearParams();
+}
+
 void parseG(int command){
+  MySerial.print("G : ");
+  MySerial.println(command);
   switch(command){
     case 0:{
       float parameters[5] = {0,0,0,0,0};
@@ -585,6 +626,8 @@ void parseG(int command){
 }
 
 void parseM(int command){
+  MySerial.print("M : ");
+  MySerial.println(command);
   switch(command){
     case 20:{
       //LISTING THE SD https://reprap.org/wiki/G-code#M20:_List_SD_card
